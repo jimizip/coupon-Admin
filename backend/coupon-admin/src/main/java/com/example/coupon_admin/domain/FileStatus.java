@@ -1,4 +1,5 @@
 package com.example.coupon_admin.domain;
 
-public class FileStatus {
+public enum FileStatus {
+    UPLOADING, COMPLETED, FAILED
 }
