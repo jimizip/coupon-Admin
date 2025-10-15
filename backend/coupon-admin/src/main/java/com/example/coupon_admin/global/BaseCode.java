@@ -1,4 +1,6 @@
 package com.example.coupon_admin.global;
 
-public class BaseCode {
+public interface BaseCode {
+
+    public ReasonDTO getReasonHttpStatus();
 }
