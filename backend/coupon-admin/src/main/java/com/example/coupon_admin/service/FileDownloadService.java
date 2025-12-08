@@ -1,30 +1,26 @@
 package com.example.coupon_admin.service;
 
-import com.amazonaws.HttpMethod;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest;
 import com.example.coupon_admin.domain.UploadFile;
 import com.example.coupon_admin.repository.UploadFileRepository;
+import com.example.coupon_admin.storage.StorageService;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
 public class FileDownloadService {
 
-    private final AmazonS3Client amazonS3Client;
+    private final StorageService storageService;
     private final UploadFileRepository uploadFileRepository;
-
-    @Value("${cloud.aws.s3.bucket}")
-    private String bucket;
 
     // application.yml에 설정된 만료 시간(분)을 주입받음
     @Value("${app.s3.presigned-url.expiration-minutes}")
@@ -40,25 +36,26 @@ public class FileDownloadService {
         UploadFile uploadFile = uploadFileRepository.findById(fileId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 파일을 찾을 수 없습니다. fileId=" + fileId));
 
-        // 2. Pre-signed URL의 만료 시각 설정 (java.time 사용)
+        // 2. Pre-signed URL의 만료 시각 설정
         Instant now = Instant.now();
         Instant expirationTime = now.plusSeconds(expirationMinutes * 60);
-        Date expiration = Date.from(expirationTime); // AWS SDK는 Date 타입을 요구
 
-        // 3. Pre-signed URL 생성 요청 객체 구성
-        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(bucket, uploadFile.getS3FilePath())
-                .withMethod(HttpMethod.GET)
-                .withExpiration(expiration);
+        // 3. 스토리지 서비스를 통해 Pre-signed URL 생성
+        try {
+            String presignedUrl = storageService.generatePresignedUrl(
+                    uploadFile.getStoragePath(),
+                    Duration.ofMinutes(expirationMinutes)
+            );
 
-        // 4. URL 생성
-        String presignedUrl = amazonS3Client.generatePresignedUrl(request).toString();
-
-        // 5. 컨트롤러에 전달할 DTO를 생성하여 반환
-        return new DownloadUrlInfo(
-                uploadFile.getOriginalFileName(),
-                presignedUrl,
-                LocalDateTime.ofInstant(expirationTime, ZoneId.systemDefault())
-        );
+            // 4. 컨트롤러에 전달할 DTO를 생성하여 반환
+            return new DownloadUrlInfo(
+                    uploadFile.getOriginalFileName(),
+                    presignedUrl,
+                    LocalDateTime.ofInstant(expirationTime, ZoneId.systemDefault())
+            );
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to generate presigned URL", e);
+        }
     }
 
     /**
